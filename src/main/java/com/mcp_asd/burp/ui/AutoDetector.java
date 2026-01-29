@@ -28,19 +28,22 @@ public class AutoDetector {
         }
     }
 
-    public static CompletableFuture<List<DetectionResult>> detect(String host, int port) {
+    public static CompletableFuture<List<DetectionResult>> detect(String host, int port, boolean useTls) {
         return CompletableFuture.supplyAsync(() -> {
             List<DetectionResult> results = new ArrayList<>();
             OkHttpClient client = new OkHttpClient.Builder()
                     .readTimeout(2, TimeUnit.SECONDS)
                     .connectTimeout(2, TimeUnit.SECONDS)
                     .build();
+            
+            String protocol = useTls ? "https://" : "http://";
 
             for (String path : COMMON_PATHS) {
                 // 1. Check SSE
                 try {
                     Request sseRequest = new Request.Builder()
-                            .url("http://" + host + ":" + port + path)
+                            .url(protocol + host + ":" + port + path)
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                             .header("Accept", "text/event-stream")
                             .get()
                             .build();
@@ -55,14 +58,19 @@ public class AutoDetector {
                             // If we get an auth error, the endpoint exists!
                             results.add(new DetectionResult("SSE (Auth Required)", path));
                             continue;
+                        } else {
+                            System.out.println("AutoDetector SSE Fail [" + path + "]: Code " + response.code());
                         }
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    System.out.println("AutoDetector SSE Error [" + path + "]: " + e.getMessage());
+                }
 
                 // 2. Check WebSocket
                 try {
                     Request wsProbe = new Request.Builder()
-                            .url("http://" + host + ":" + port + path)
+                            .url(protocol + host + ":" + port + path)
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                             .header("Connection", "Upgrade")
                             .header("Upgrade", "websocket")
                             .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
@@ -86,7 +94,9 @@ public class AutoDetector {
                              results.add(new DetectionResult("WebSocket", path));
                         }
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                     System.out.println("AutoDetector WS Error [" + path + "]: " + e.getMessage());
+                }
             }
             return results;
         });

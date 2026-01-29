@@ -11,6 +11,7 @@ public class ConnectionConfiguration {
     
     private Map<String, String> headers = new HashMap<>();
     
+    private boolean useTls;
     private boolean useMtls;
     private String clientCertPath;
     private String clientCertPassword;
@@ -32,6 +33,9 @@ public class ConnectionConfiguration {
     public Map<String, String> getHeaders() { return headers; }
     public void setHeaders(Map<String, String> headers) { this.headers = headers; }
     public void addHeader(String key, String value) { this.headers.put(key, value); }
+
+    public boolean isUseTls() { return useTls; }
+    public void setUseTls(boolean useTls) { this.useTls = useTls; }
 
     public boolean isUseMtls() { return useMtls; }
     public void setUseMtls(boolean useMtls) { this.useMtls = useMtls; }

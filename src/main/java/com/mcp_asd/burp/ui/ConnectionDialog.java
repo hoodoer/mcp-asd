@@ -9,6 +9,7 @@ import java.util.Map;
 public class ConnectionDialog extends JDialog {
     private JTextField hostField;
     private JTextField portField;
+    private JCheckBox tlsCheckBox;
     private JComboBox<String> transportCombo;
     private JTextField pathField;
     
@@ -50,6 +51,9 @@ public class ConnectionDialog extends JDialog {
             for (Map.Entry<String, String> entry : existingConfig.getHeaders().entrySet()) {
                 headersModel.addRow(new String[]{entry.getKey(), entry.getValue()});
             }
+            
+            // Fill TLS
+            tlsCheckBox.setSelected(existingConfig.isUseTls());
             
             // Fill mTLS
             if (existingConfig.isUseMtls()) {
@@ -115,15 +119,21 @@ public class ConnectionDialog extends JDialog {
         portField = new JTextField(String.valueOf(defaultPort));
         formPanel.add(portField, gbc);
 
-        // Row 2: Auto-Detect
+        // Row 2: TLS
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 2;
+        tlsCheckBox = new JCheckBox("Use TLS/SSL");
+        tlsCheckBox.setSelected(defaultPort == 443);
+        formPanel.add(tlsCheckBox, gbc);
+
+        // Row 3: Auto-Detect
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2;
         JButton detectButton = new JButton("Auto-Detect Endpoints");
         formPanel.add(detectButton, gbc);
         
         detectButton.addActionListener(e -> {
             detectButton.setEnabled(false);
             detectButton.setText("Scanning...");
-            AutoDetector.detect(hostField.getText(), getPort()).thenAccept(results -> {
+            AutoDetector.detect(hostField.getText(), getPort(), tlsCheckBox.isSelected()).thenAccept(results -> {
                 SwingUtilities.invokeLater(() -> {
                     detectButton.setEnabled(true);
                     detectButton.setText("Auto-Detect Endpoints");
@@ -155,10 +165,10 @@ public class ConnectionDialog extends JDialog {
             });
         });
 
-        // Row 3: Transport
-        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 1; gbc.weightx = 0.0;
+        // Row 4: Transport
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 1; gbc.weightx = 0.0;
         formPanel.add(new JLabel("Transport:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 3; gbc.weightx = 1.0;
+        gbc.gridx = 1; gbc.gridy = 4; gbc.weightx = 1.0;
         transportCombo = new JComboBox<>(new String[]{"SSE", "WebSocket"});
         transportCombo.addActionListener(e -> {
             if ("WebSocket".equals(transportCombo.getSelectedItem())) {
@@ -169,10 +179,10 @@ public class ConnectionDialog extends JDialog {
         });
         formPanel.add(transportCombo, gbc);
 
-        // Row 4: Path
-        gbc.gridx = 0; gbc.gridy = 4; gbc.weightx = 0.0;
+        // Row 5: Path
+        gbc.gridx = 0; gbc.gridy = 5; gbc.weightx = 0.0;
         formPanel.add(new JLabel("Path:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 4; gbc.weightx = 1.0;
+        gbc.gridx = 1; gbc.gridy = 5; gbc.weightx = 1.0;
         pathField = new JTextField("/mcp");
         formPanel.add(pathField, gbc);
 
@@ -315,6 +325,7 @@ public class ConnectionDialog extends JDialog {
             (String)transportCombo.getSelectedItem(), 
             pathField.getText()
         );
+        configuration.setUseTls(tlsCheckBox.isSelected());
         
         // Parse Headers
         Map<String, String> headers = new HashMap<>();

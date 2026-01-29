@@ -19,6 +19,11 @@ public class EnumerationEngine implements TransportListener {
     private CountDownLatch latch;
     private volatile boolean connectionFailed = false;
     private ConnectionConfiguration currentConfig;
+    
+    // Request IDs for tracking enumeration responses
+    private String toolsRequestId;
+    private String resourcesRequestId;
+    private String promptsRequestId;
 
     public EnumerationEngine(MontoyaApi api, DashboardTab dashboardTab, SecurityTester tester, SessionStore sessionStore) {
         this.api = api;
@@ -115,9 +120,15 @@ public class EnumerationEngine implements TransportListener {
         initRequest.put("id", java.util.UUID.randomUUID().toString());
 
         sendRequest(initRequest.toString());
-        sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"tools/list\",\"id\":\"" + java.util.UUID.randomUUID() + "\"}");
-        sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"resources/list\",\"id\":\"" + java.util.UUID.randomUUID() + "\"}");
-        sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"prompts/list\",\"id\":\"" + java.util.UUID.randomUUID() + "\"}");
+        
+        // Generate and store IDs for enumeration
+        toolsRequestId = java.util.UUID.randomUUID().toString();
+        resourcesRequestId = java.util.UUID.randomUUID().toString();
+        promptsRequestId = java.util.UUID.randomUUID().toString();
+
+        sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"tools/list\",\"id\":\"" + toolsRequestId + "\"}");
+        sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"resources/list\",\"id\":\"" + resourcesRequestId + "\"}");
+        sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"prompts/list\",\"id\":\"" + promptsRequestId + "\"}");
     }
 
     @Override
@@ -136,15 +147,31 @@ public class EnumerationEngine implements TransportListener {
             }
 
             // 2. Enumeration Logic
-            if (json.has("result")) {
-                 if (data.contains("get_weather")) { // Heuristic to identify tools
-                    SwingUtilities.invokeLater(() -> dashboardTab.updateTools(json.getJSONObject("result")));
+            if (json.has("id") && !json.isNull("id")) {
+                String id = json.getString("id");
+                
+                if (id.equals(toolsRequestId)) {
+                    if (json.has("result")) {
+                        SwingUtilities.invokeLater(() -> dashboardTab.updateTools(json.getJSONObject("result")));
+                    } else if (json.has("error")) {
+                         api.logging().logToError("Tools Enumeration Failed: " + json.getJSONObject("error").toString());
+                    }
                     if (latch != null) latch.countDown();
-                } else if (data.contains("user_data")) { // Heuristic for resources
-                    SwingUtilities.invokeLater(() -> dashboardTab.updateResources(json.getJSONObject("result")));
+                } 
+                else if (id.equals(resourcesRequestId)) {
+                    if (json.has("result")) {
+                        SwingUtilities.invokeLater(() -> dashboardTab.updateResources(json.getJSONObject("result")));
+                    } else if (json.has("error")) {
+                         api.logging().logToError("Resources Enumeration Failed: " + json.getJSONObject("error").toString());
+                    }
                     if (latch != null) latch.countDown();
-                } else if (data.contains("summarize_text")) { // Heuristic for prompts
-                    SwingUtilities.invokeLater(() -> dashboardTab.updatePrompts(json.getJSONObject("result")));
+                } 
+                else if (id.equals(promptsRequestId)) {
+                    if (json.has("result")) {
+                        SwingUtilities.invokeLater(() -> dashboardTab.updatePrompts(json.getJSONObject("result")));
+                    } else if (json.has("error")) {
+                         api.logging().logToError("Prompts Enumeration Failed: " + json.getJSONObject("error").toString());
+                    }
                     if (latch != null) latch.countDown();
                 }
             }

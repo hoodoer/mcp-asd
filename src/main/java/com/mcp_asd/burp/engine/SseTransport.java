@@ -24,6 +24,7 @@ public class SseTransport implements McpTransport {
     private OkHttpClient client;
     private EventSource eventSource;
     private ConnectionConfiguration config;
+    private volatile String postEndpointUrl;
 
     public SseTransport(MontoyaApi api) {
         this.api = api;
@@ -43,13 +44,14 @@ public class SseTransport implements McpTransport {
         client = builder.build();
 
         String url = "http://" + config.getHost() + ":" + config.getPort() + config.getPath();
-        if (config.isUseMtls()) {
+        if (config.isUseTls() || config.isUseMtls()) {
             url = url.replace("http://", "https://");
         }
 
         Request.Builder requestBuilder = new Request.Builder()
                 .url(url)
                 .get()
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .addHeader("Accept", "text/event-stream");
 
         // Add custom headers
@@ -60,12 +62,29 @@ public class SseTransport implements McpTransport {
         EventSourceListener esListener = new EventSourceListener() {
             @Override
             public void onOpen(@NotNull EventSource eventSource, @NotNull okhttp3.Response response) {
-                listener.onOpen();
+                api.logging().logToOutput("SseTransport: Connection established. Waiting for 'endpoint' event...");
             }
 
             @Override
             public void onEvent(@NotNull EventSource eventSource, String id, String type, @NotNull String data) {
-                listener.onMessage(data);
+                if ("endpoint".equals(type)) {
+                    String baseUrl = (config.isUseTls() || config.isUseMtls() ? "https://" : "http://") + config.getHost() + ":" + config.getPort();
+                    if (data.startsWith("http://") || data.startsWith("https://")) {
+                        postEndpointUrl = data;
+                    } else if (data.startsWith("/")) {
+                        postEndpointUrl = baseUrl + data;
+                    } else {
+                        // Relative to current path - simple heuristic, append to baseUrl + path's parent? 
+                        // Standard says relative to the request URI.
+                        // For safety/simplicity with standard MCP, it's usually root relative or absolute.
+                        // We'll treat non-slash start as relative to base for now or just append.
+                        postEndpointUrl = baseUrl + (data.startsWith("/") ? "" : "/") + data;
+                    }
+                    api.logging().logToOutput("SseTransport: Received endpoint event. POST URL: " + postEndpointUrl);
+                    listener.onOpen();
+                } else {
+                    listener.onMessage(data);
+                }
             }
 
             @Override
@@ -76,7 +95,13 @@ public class SseTransport implements McpTransport {
             @Override
             public void onFailure(@NotNull EventSource eventSource, Throwable t, okhttp3.Response response) {
                 if (response != null) {
-                    listener.onError(new RuntimeException("HTTP " + response.code() + ": " + response.message()));
+                    String body = "";
+                    try {
+                        body = response.body() != null ? response.body().string() : "";
+                    } catch (Exception e) {
+                        body = " (failed to read body)";
+                    }
+                    listener.onError(new RuntimeException("HTTP " + response.code() + ": " + response.message() + "\nBody: " + body));
                 } else {
                     listener.onError(t);
                 }
@@ -114,9 +139,15 @@ public class SseTransport implements McpTransport {
         if (client == null || config == null) return;
         new Thread(() -> {
             try {
-                String url = "http://" + config.getHost() + ":" + config.getPort() + config.getPath();
-                if (config.isUseMtls()) {
-                    url = url.replace("http://", "https://");
+                String url;
+                if (postEndpointUrl != null) {
+                    url = postEndpointUrl;
+                } else {
+                    api.logging().logToError("SseTransport: Warning - Sending message before 'endpoint' event received. Using default path.");
+                    url = "http://" + config.getHost() + ":" + config.getPort() + config.getPath();
+                    if (config.isUseTls() || config.isUseMtls()) {
+                        url = url.replace("http://", "https://");
+                    }
                 }
 
                 api.logging().logToOutput("SseTransport: Sending POST to " + url + ": " + message);
@@ -129,7 +160,9 @@ public class SseTransport implements McpTransport {
 
                 try (okhttp3.Response response = client.newCall(requestBuilder.build()).execute()) {
                     if (!response.isSuccessful()) {
-                        api.logging().logToError("SseTransport: Error " + response.code() + ": " + response.body().string());
+                        String body = "";
+                        try { body = response.body().string(); } catch (Exception ignored) {}
+                        api.logging().logToError("SseTransport: Error " + response.code() + ": " + body);
                     }
                 }
             } catch (Exception e) {

@@ -42,14 +42,16 @@ public class WebSocketTransport implements McpTransport {
         client = builder.build();
 
         String url = "http://" + config.getHost() + ":" + config.getPort() + config.getPath();
-        if (config.isUseMtls()) {
+        if (config.isUseTls() || config.isUseMtls()) {
             url = url.replace("http://", "https://");
         }
         // OkHttp handles ws:// vs http:// automatically in some contexts, 
         // but for WebSockets we should ensure it's ws:// or wss://
         url = url.replace("http://", "ws://").replace("https://", "wss://");
 
-        Request.Builder requestBuilder = new Request.Builder().url(url);
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         
         // Add custom headers
         config.getHeaders().forEach(requestBuilder::addHeader);
@@ -74,7 +76,13 @@ public class WebSocketTransport implements McpTransport {
             @Override
             public void onFailure(@NotNull WebSocket webSocket, @NotNull Throwable t, @Nullable Response response) {
                 if (response != null) {
-                    listener.onError(new RuntimeException("HTTP " + response.code() + ": " + response.message()));
+                    String body = "";
+                    try {
+                        body = response.body() != null ? response.body().string() : "";
+                    } catch (Exception e) {
+                        body = " (failed to read body)";
+                    }
+                    listener.onError(new RuntimeException("HTTP " + response.code() + ": " + response.message() + "\nBody: " + body));
                 } else {
                     listener.onError(t);
                 }
