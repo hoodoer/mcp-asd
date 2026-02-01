@@ -1,6 +1,7 @@
 package com.mcp_asd.burp.engine;
 
 import burp.api.montoya.MontoyaApi;
+import com.mcp_asd.burp.GlobalSettings;
 import com.mcp_asd.burp.test.SecurityTester;
 import com.mcp_asd.burp.ui.DashboardTab;
 import com.mcp_asd.burp.ui.ConnectionConfiguration;
@@ -12,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 
 public class EnumerationEngine implements TransportListener {
     private final MontoyaApi api;
+    private final GlobalSettings settings;
     private DashboardTab dashboardTab;
     private final SessionStore sessionStore;
     private final SecurityTester tester;
@@ -30,21 +32,40 @@ public class EnumerationEngine implements TransportListener {
     private boolean resourcesDone = false;
     private boolean promptsDone = false;
 
-    public EnumerationEngine(MontoyaApi api, DashboardTab dashboardTab, SecurityTester tester, SessionStore sessionStore) {
+    public EnumerationEngine(MontoyaApi api, DashboardTab dashboardTab, SecurityTester tester, SessionStore sessionStore, GlobalSettings settings) {
         this.api = api;
         this.dashboardTab = dashboardTab;
         this.tester = tester;
         this.sessionStore = sessionStore;
+        this.settings = settings;
     }
 
     public void setDashboardTab(DashboardTab dashboardTab) {
         this.dashboardTab = dashboardTab;
     }
 
+    private volatile boolean cancelled = false;
+
+    public void cancel() {
+        this.cancelled = true;
+        api.logging().logToOutput("Cancellation requested by user.");
+        if (transport != null) {
+            transport.close();
+        }
+        if (latch != null) {
+            latch.countDown();
+        }
+        if (dashboardTab != null) {
+            dashboardTab.setStatus("⚪ Cancelled", java.awt.Color.GRAY);
+            dashboardTab.setCancelEnabled(false);
+        }
+    }
+
     public void start(ConnectionConfiguration config) {
         this.currentConfig = config;
         
         // Reset state
+        this.cancelled = false;
         this.connectionFailed = false;
         this.toolsDone = false;
         this.resourcesDone = false;
@@ -53,10 +74,13 @@ public class EnumerationEngine implements TransportListener {
         if (dashboardTab != null) {
             dashboardTab.setTarget(config.getHost(), config.getPort());
             dashboardTab.setStatus("🟠 Connecting via " + config.getTransport() + "...", java.awt.Color.ORANGE.darker());
+            dashboardTab.setCancelEnabled(true);
         }
         
         new Thread(() -> {
             boolean success = attemptConnection(config, false);
+            if (cancelled) return; // Exit if cancelled
+
             if (!success && !config.getTransport().equals("WebSocket")) {
                 api.logging().logToOutput("Enumeration failed or timed out. Retrying with forced HTTP/1.1...");
                 if (dashboardTab != null) {
@@ -64,18 +88,23 @@ public class EnumerationEngine implements TransportListener {
                 }
                 attemptConnection(config, true);
             }
+            
+            if (dashboardTab != null) {
+                dashboardTab.setCancelEnabled(false);
+            }
         }).start();
     }
 
     private boolean attemptConnection(ConnectionConfiguration config, boolean forceHttp1) {
+        if (cancelled) return false;
         try {
             latch = new CountDownLatch(1); // Wait for Handshake (initialize response)
             this.connectionFailed = false;
 
             if ("WebSocket".equals(config.getTransport())) {
-                transport = new WebSocketTransport(api);
+                transport = new WebSocketTransport(api, settings);
             } else {
-                SseTransport sse = new SseTransport(api);
+                SseTransport sse = new SseTransport(api, settings);
                 if (forceHttp1) sse.setForceHttp1(true);
                 transport = sse;
             }
@@ -90,6 +119,11 @@ public class EnumerationEngine implements TransportListener {
                 return false;
             }
             
+            if (cancelled) {
+                api.logging().logToOutput("Connection attempt aborted (cancelled).");
+                return false;
+            }
+            
             if (connectionFailed) {
                 transport.close();
                 return false;
@@ -101,6 +135,9 @@ public class EnumerationEngine implements TransportListener {
 
         } catch (Exception e) {
             api.logging().logToError("Exception during connection attempt: " + e.getMessage());
+            if (dashboardTab != null) {
+                dashboardTab.setStatus("🔴 Connection Error: " + e.getMessage(), java.awt.Color.RED);
+            }
             return false;
         }
     }
@@ -122,7 +159,7 @@ public class EnumerationEngine implements TransportListener {
         JSONObject initParams = new JSONObject();
         initParams.put("protocolVersion", "2024-11-05");
         initParams.put("capabilities", new JSONObject());
-        initParams.put("clientInfo", new JSONObject().put("name", "MCP-ASD").put("version", "0.5.0"));
+        initParams.put("clientInfo", new JSONObject().put("name", "MCP-ASD").put("version", "0.6.0"));
         
         if (currentConfig != null && currentConfig.getInitializationOptions() != null && !currentConfig.getInitializationOptions().trim().isEmpty()) {
             try {

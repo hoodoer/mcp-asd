@@ -9,23 +9,29 @@ import okhttp3.WebSocketListener;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.util.concurrent.TimeUnit;
 
 import com.mcp_asd.burp.ui.ConnectionConfiguration;
+import com.mcp_asd.burp.GlobalSettings;
 import javax.net.ssl.*;
 import java.io.FileInputStream;
 import java.security.KeyStore;
 import java.security.SecureRandom;
+import java.security.cert.CertificateException;
 import java.util.concurrent.TimeUnit;
 
 public class WebSocketTransport implements McpTransport {
     private final MontoyaApi api;
+    private final GlobalSettings settings;
     private OkHttpClient client;
     private WebSocket webSocket;
     private ConnectionConfiguration config;
 
-    public WebSocketTransport(MontoyaApi api) {
+    public WebSocketTransport(MontoyaApi api, GlobalSettings settings) {
         this.api = api;
+        this.settings = settings;
     }
 
     @Override
@@ -34,6 +40,42 @@ public class WebSocketTransport implements McpTransport {
 
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .readTimeout(0, TimeUnit.SECONDS);
+        
+        // --- SSL Configuration ---
+        try {
+            // Create a trust manager that does not validate certificate chains
+            final TrustManager[] trustAllCerts = new TrustManager[] {
+                new X509TrustManager() {
+                    @Override
+                    public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {}
+                    @Override
+                    public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {}
+                    @Override
+                    public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[]{}; }
+                }
+            };
+
+            // Install the all-trusting trust manager
+            final SSLContext sslContext = SSLContext.getInstance("SSL");
+            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
+            final SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+
+            builder.sslSocketFactory(sslSocketFactory, (X509TrustManager)trustAllCerts[0]);
+            builder.hostnameVerifier((hostname, session) -> true);
+
+        } catch (Exception e) {
+            api.logging().logToError("WebSocketTransport: Failed to create insecure SSL context: " + e.getMessage());
+        }
+        // -------------------------
+        
+        if (settings != null && settings.isProxyTrafficEnabled()) {
+             String host = settings.getProxyHost();
+             int port = settings.getProxyPort();
+             if (host != null && !host.isEmpty() && port > 0) {
+                 api.logging().logToOutput("WebSocketTransport: Using proxy " + host + ":" + port);
+                 builder.proxy(new Proxy(Proxy.Type.HTTP, new InetSocketAddress(host, port)));
+             }
+        }
 
         if (config.isUseMtls()) {
             configureMtls(builder, config);

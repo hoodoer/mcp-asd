@@ -16,6 +16,9 @@ public class BurpExtender implements BurpExtension
             api.extension().setName("MCP Attack Surface Detector");
             api.logging().logToOutput("MCP Attack Surface Detector loaded.");
 
+            api.logging().logToOutput("Initializing GlobalSettings...");
+            GlobalSettings settings = new GlobalSettings(api);
+
             api.logging().logToOutput("Initializing SessionStore...");
             SessionStore sessionStore = new SessionStore();
             
@@ -25,14 +28,14 @@ public class BurpExtender implements BurpExtension
             
             // Refactored initialization order to handle circular dependencies
             api.logging().logToOutput("Initializing EnumerationEngine...");
-            EnumerationEngine engine = new EnumerationEngine(api, null, tester, sessionStore);
+            EnumerationEngine engine = new EnumerationEngine(api, null, tester, sessionStore, settings);
             tester.setEngine(engine);
 
             api.logging().logToOutput("Initializing McpProxy...");
             McpProxy proxy = new McpProxy(api, sessionStore, engine);
             
             api.logging().logToOutput("Initializing DashboardTab...");
-            DashboardTab dashboardTab = new DashboardTab(api, tester, proxy);
+            DashboardTab dashboardTab = new DashboardTab(api, tester, proxy, settings);
             
             // Link Tab to Engine
             engine.setDashboardTab(dashboardTab);
@@ -42,11 +45,18 @@ public class BurpExtender implements BurpExtension
                 engine.start(config);
             });
             
-            api.logging().logToOutput("Registering HttpHandler...");
-
-            api.logging().logToOutput("Registering HttpHandler...");
+            // Allow DashboardTab to cancel connection
+            dashboardTab.setCancellationListener(() -> {
+                engine.cancel();
+            });
+            
+            api.logging().logToOutput("Registering HttpHandler (McpProxy)...");
             api.http().registerHttpHandler(proxy);
             
+            api.logging().logToOutput("Registering ScanHandler...");
+            ScanHandler scanHandler = new ScanHandler(api, settings);
+            api.http().registerHttpHandler(scanHandler);
+
             api.logging().logToOutput("Registering ContextMenu...");
             api.userInterface().registerContextMenuItemsProvider(new com.mcp_asd.burp.ui.ContextMenuFactory(api, engine));
             

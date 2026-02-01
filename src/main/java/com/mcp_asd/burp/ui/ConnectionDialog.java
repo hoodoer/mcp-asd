@@ -28,9 +28,9 @@ public class ConnectionDialog extends JDialog {
         super(owner, "Connect to MCP Server", true);
         setLayout(new BorderLayout());
         
-        // Use existing config if available, otherwise defaults
-        String initialHost = (existingConfig != null) ? existingConfig.getHost() : defaultHost;
-        int initialPort = (existingConfig != null) ? existingConfig.getPort() : defaultPort;
+        // Use existing config if available, otherwise empty (no defaults)
+        String initialHost = (existingConfig != null) ? existingConfig.getHost() : "";
+        String initialPort = (existingConfig != null) ? String.valueOf(existingConfig.getPort()) : "";
         
         JTabbedPane tabbedPane = new JTabbedPane();
         
@@ -62,17 +62,9 @@ public class ConnectionDialog extends JDialog {
                 certPathField.setText(existingConfig.getClientCertPath());
                 certPasswordField.setText(existingConfig.getClientCertPassword());
             }
-            
-            // Fill Init Params
-            if (existingConfig.getInitializationOptions() != null) {
-                 // We need to wait for createAuthTab to run? No, createAuthTab is called before this.
-                 // But wait, initParamsArea is created inside createAuthTab.
-                 // createAuthTab is called a few lines above.
-            }
         }
         
         // We need to make sure initParamsArea is accessible.
-        // It is created in createAuthTab which is called above.
         if (existingConfig != null && existingConfig.getInitializationOptions() != null) {
              if (initParamsArea != null) initParamsArea.setText(existingConfig.getInitializationOptions());
         }
@@ -98,7 +90,7 @@ public class ConnectionDialog extends JDialog {
         setLocationRelativeTo(owner);
     }
 
-    private JPanel createGeneralTab(String defaultHost, int defaultPort) {
+    private JPanel createGeneralTab(String initialHost, String initialPort) {
         JPanel formPanel = new JPanel(new GridBagLayout());
         formPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -109,20 +101,23 @@ public class ConnectionDialog extends JDialog {
         gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0.0;
         formPanel.add(new JLabel("Host:"), gbc);
         gbc.gridx = 1; gbc.gridy = 0; gbc.weightx = 1.0;
-        hostField = new JTextField(defaultHost);
+        hostField = new JTextField(initialHost);
         formPanel.add(hostField, gbc);
 
         // Row 1: Port
         gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0.0;
         formPanel.add(new JLabel("Port:"), gbc);
         gbc.gridx = 1; gbc.gridy = 1; gbc.weightx = 1.0;
-        portField = new JTextField(String.valueOf(defaultPort));
+        portField = new JTextField(initialPort);
         formPanel.add(portField, gbc);
 
         // Row 2: TLS
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 2;
         tlsCheckBox = new JCheckBox("Use TLS/SSL");
-        tlsCheckBox.setSelected(defaultPort == 443);
+        // Auto-select TLS if port is 443
+        try {
+            if (!initialPort.isEmpty() && Integer.parseInt(initialPort) == 443) tlsCheckBox.setSelected(true);
+        } catch (NumberFormatException ignored) {}
         formPanel.add(tlsCheckBox, gbc);
 
         // Row 3: Auto-Detect
@@ -321,9 +316,26 @@ public class ConnectionDialog extends JDialog {
     }
 
     private void onConnect() {
+        String host = hostField.getText().trim();
+        String portStr = portField.getText().trim();
+        
+        if (host.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Host cannot be empty.", "Validation Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        int port;
+        try {
+            port = Integer.parseInt(portStr);
+            if (port < 1 || port > 65535) throw new NumberFormatException();
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Port must be a valid number (1-65535).", "Validation Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
         configuration = new ConnectionConfiguration(
-            hostField.getText(), 
-            getPort(), 
+            host, 
+            port, 
             (String)transportCombo.getSelectedItem(), 
             pathField.getText()
         );

@@ -1,7 +1,7 @@
 # Project Status: MCP Attack Surface Detector
 
-**Current Version:** 0.5.0 (Alpha)
-**Build Status:** Stable / Feature Complete for Phase 2
+**Current Version:** 0.5.2 (Alpha)
+**Build Status:** Stable / Ready for Phase 3
 
 ## Development Phases
 
@@ -19,6 +19,18 @@
     *   Basic Active Scanner Engine.
     *   Checks: Type Confusion, Input Reflection, BOLA (Resources).
 *   **Verification:** Verified against local `mcp_server.py`.
+
+### Phase 2.5: Polish & Hardening (Completed - Jan 2026)
+*   **Protocol Compliance:** 
+    *   Updated method calls to `tools/call` (replacing legacy `tools/invoke`) to match official MCP specification.
+    *   Verified compatibility with public servers (DeepWiki, CoinAPI).
+*   **Connection Stability:**
+    *   Fixed race conditions in SSE transport (handling immediate vs delayed `endpoint` events).
+    *   Fixed `405 Method Not Allowed` errors on hybrid stateless/stateful servers.
+    *   Fixed Auto-Detector bug for "Auth Required" WebSocket endpoints.
+*   **UI/UX Improvements:**
+    *   **Server Info:** Added rich HTML dialog to view Server Version, Capabilities, and System Instructions.
+    *   **Feedback:** Improved "Enumerating..." status indicators and automated UI clearing on new connections.
 
 ### Phase 3: Advanced Capabilities (Planned)
 *   **Native Integration:** Report issues to Burp Target/Dashboard (`IScanIssue`).

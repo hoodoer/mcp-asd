@@ -6,6 +6,7 @@ import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import com.mcp_asd.burp.test.SecurityTester;
 import com.mcp_asd.burp.McpProxy; // Add import
+import com.mcp_asd.burp.GlobalSettings; // Add import
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -46,17 +47,36 @@ public class DashboardTab extends JComponent {
     private JButton sendToRepeaterButton;
     private JButton sendToIntruderButton;
     private JButton serverInfoButton; // Promoted
+    private JButton cancelButton; // New Cancel Button
     
     private String targetHost;
     private int targetPort;
     private ConnectionConfiguration lastConfig; // Persist last config
     private JSONObject serverInfo; // Field for server info
 
-    public DashboardTab(MontoyaApi api, SecurityTester tester, McpProxy mcpProxy) {
+    private final GlobalSettings settings; // Add field
+    private CancellationListener cancellationListener;
+
+    public interface CancellationListener {
+        void onCancel();
+    }
+
+    public void setCancellationListener(CancellationListener listener) {
+        this.cancellationListener = listener;
+    }
+
+    public DashboardTab(MontoyaApi api, SecurityTester tester, McpProxy mcpProxy, GlobalSettings settings) { // Update Constructor
         this.api = api;
         this.tester = tester;
         this.mcpProxy = mcpProxy;
+        this.settings = settings;
         initComponents();
+    }
+
+    public void setCancelEnabled(boolean enabled) {
+        SwingUtilities.invokeLater(() -> {
+            if (cancelButton != null) cancelButton.setEnabled(enabled);
+        });
     }
 
     private void initComponents() {
@@ -78,13 +98,30 @@ public class DashboardTab extends JComponent {
         
         JButton aboutButton = new JButton("About");
         aboutButton.addActionListener(e -> JOptionPane.showMessageDialog(this, 
-                "MCP Attack Surface Detector\n\nA Burp Suite extension for discovering and testing\nModel Context Protocol (MCP) servers.\n\nVersion: 0.5.0 (Alpha)\nAuthor: Hoodoer", 
+                "MCP Attack Surface Detector\n\nA Burp Suite extension for discovering and testing\nModel Context Protocol (MCP) servers.\n\nVersion: 0.6.0 (Alpha)\nAuthor: Hoodoer", 
                 "About MCP-ASD", 
                 JOptionPane.INFORMATION_MESSAGE));
+
+        JButton settingsButton = new JButton("Settings"); // New Button
+        settingsButton.addActionListener(e -> {
+            SwingUtilities.invokeLater(() -> {
+                SettingsDialog dialog = new SettingsDialog(SwingUtilities.getWindowAncestor(this), settings);
+                dialog.setVisible(true);
+            });
+        });
 
         serverInfoButton = new JButton("Server Info");
         serverInfoButton.setEnabled(false);
         serverInfoButton.addActionListener(e -> showServerInfo());
+        
+        cancelButton = new JButton("Cancel");
+        cancelButton.setEnabled(false);
+        cancelButton.addActionListener(e -> {
+            int confirm = JOptionPane.showConfirmDialog(this, "Are you sure you want to cancel the connection attempt?", "Confirm Cancellation", JOptionPane.YES_NO_OPTION);
+            if (confirm == JOptionPane.YES_OPTION) {
+                if (cancellationListener != null) cancellationListener.onCancel();
+            }
+        });
 
         JButton connectButton = new JButton("New Connection");
         connectButton.addActionListener(e -> {
@@ -103,7 +140,9 @@ public class DashboardTab extends JComponent {
 
         JPanel headerButtons = new JPanel();
         headerButtons.add(connectButton);
+        headerButtons.add(cancelButton); // Add Cancel button
         headerButtons.add(serverInfoButton);
+        headerButtons.add(settingsButton); // Add to panel
         headerButtons.add(aboutButton);
 
         topPanel.add(titlePanel, BorderLayout.WEST);

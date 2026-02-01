@@ -1,6 +1,6 @@
 # Next Steps: Phase 3 & Beyond
 
-With Phase 2 (Authentication & Basic Scanning) complete, the project focus shifts to **Deep Integration** and **Advanced Fuzzing**.
+With **Phase 2 (Authentication & Basic Scanning)** and **Phase 2.5 (Protocol Polish & UI Hardening)** complete, the project focus shifts to **Deep Integration** and **Advanced Fuzzing**.
 
 ## Phase 3: Advanced Capabilities
 

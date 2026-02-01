@@ -1,6 +1,7 @@
 package com.mcp_asd.burp.engine;
 
 import burp.api.montoya.MontoyaApi;
+import com.mcp_asd.burp.GlobalSettings;
 import com.mcp_asd.burp.ui.ConnectionConfiguration;
 import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
@@ -11,6 +12,8 @@ import okhttp3.sse.EventSourceListener;
 import okhttp3.sse.EventSources;
 import org.jetbrains.annotations.NotNull;
 
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 
@@ -19,9 +22,11 @@ import javax.net.ssl.*;
 import java.io.FileInputStream;
 import java.security.KeyStore;
 import java.security.SecureRandom;
+import java.security.cert.CertificateException;
 
 public class SseTransport implements McpTransport {
     private final MontoyaApi api;
+    private final GlobalSettings settings;
     private OkHttpClient client;
     private EventSource eventSource;
     private ConnectionConfiguration config;
@@ -30,8 +35,9 @@ public class SseTransport implements McpTransport {
     private boolean forceHttp1 = false;
     private final java.util.concurrent.atomic.AtomicBoolean onOpenCalled = new java.util.concurrent.atomic.AtomicBoolean(false);
 
-    public SseTransport(MontoyaApi api) {
+    public SseTransport(MontoyaApi api, GlobalSettings settings) {
         this.api = api;
+        this.settings = settings;
     }
 
     public void setForceHttp1(boolean forceHttp1) {
@@ -48,6 +54,33 @@ public class SseTransport implements McpTransport {
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.SECONDS); // Infinite timeout for SSE
 
+        // --- SSL Configuration ---
+        try {
+            // Create a trust manager that does not validate certificate chains
+            final TrustManager[] trustAllCerts = new TrustManager[] {
+                new X509TrustManager() {
+                    @Override
+                    public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {}
+                    @Override
+                    public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {}
+                    @Override
+                    public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[]{}; }
+                }
+            };
+
+            // Install the all-trusting trust manager
+            final SSLContext sslContext = SSLContext.getInstance("SSL");
+            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
+            final SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+
+            builder.sslSocketFactory(sslSocketFactory, (X509TrustManager)trustAllCerts[0]);
+            builder.hostnameVerifier((hostname, session) -> true);
+
+        } catch (Exception e) {
+            api.logging().logToError("SseTransport: Failed to create insecure SSL context: " + e.getMessage());
+        }
+        // -------------------------
+
         if (forceHttp1) {
             builder.protocols(Arrays.asList(Protocol.HTTP_1_1));
             api.logging().logToOutput("SseTransport: Forcing HTTP/1.1");
@@ -55,6 +88,15 @@ public class SseTransport implements McpTransport {
 
         if (config.isUseMtls()) {
             configureMtls(builder, config);
+        }
+        
+        if (settings != null && settings.isProxyTrafficEnabled()) {
+             String host = settings.getProxyHost();
+             int port = settings.getProxyPort();
+             if (host != null && !host.isEmpty() && port > 0) {
+                 api.logging().logToOutput("SseTransport: Using proxy " + host + ":" + port);
+                 builder.proxy(new Proxy(Proxy.Type.HTTP, new InetSocketAddress(host, port)));
+             }
         }
 
         client = builder.build();
