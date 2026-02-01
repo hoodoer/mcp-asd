@@ -45,10 +45,12 @@ public class DashboardTab extends JComponent {
     private JTextArea metadataInspector;
     private JButton sendToRepeaterButton;
     private JButton sendToIntruderButton;
+    private JButton serverInfoButton; // Promoted
     
     private String targetHost;
     private int targetPort;
     private ConnectionConfiguration lastConfig; // Persist last config
+    private JSONObject serverInfo; // Field for server info
 
     public DashboardTab(MontoyaApi api, SecurityTester tester, McpProxy mcpProxy) {
         this.api = api;
@@ -80,6 +82,10 @@ public class DashboardTab extends JComponent {
                 "About MCP-ASD", 
                 JOptionPane.INFORMATION_MESSAGE));
 
+        serverInfoButton = new JButton("Server Info");
+        serverInfoButton.setEnabled(false);
+        serverInfoButton.addActionListener(e -> showServerInfo());
+
         JButton connectButton = new JButton("New Connection");
         connectButton.addActionListener(e -> {
             SwingUtilities.invokeLater(() -> {
@@ -96,6 +102,7 @@ public class DashboardTab extends JComponent {
 
         JPanel headerButtons = new JPanel();
         headerButtons.add(connectButton);
+        headerButtons.add(serverInfoButton);
         headerButtons.add(aboutButton);
 
         topPanel.add(titlePanel, BorderLayout.WEST);
@@ -197,6 +204,60 @@ public class DashboardTab extends JComponent {
         this.targetHost = host;
         this.targetPort = port;
         SwingUtilities.invokeLater(() -> headerLabel.setText("Connected to: " + host + ":" + port));
+    }
+
+    public void updateServerInfo(JSONObject info) {
+        this.serverInfo = info;
+        SwingUtilities.invokeLater(() -> {
+            if (serverInfoButton != null) serverInfoButton.setEnabled(true);
+        });
+    }
+
+    private void showServerInfo() {
+        if (serverInfo == null) return;
+        
+        JSONObject sInfo = serverInfo.optJSONObject("serverInfo");
+        String name = (sInfo != null) ? sInfo.optString("name", "Unknown") : "Unknown";
+        String version = (sInfo != null) ? sInfo.optString("version", "?") : "?";
+        String protocol = serverInfo.optString("protocolVersion", "Unknown");
+        String instructions = serverInfo.optString("instructions", "No instructions provided.");
+        
+        // Basic HTML escaping for instructions
+        instructions = instructions.replace("&", "&amp;")
+                                   .replace("<", "&lt;")
+                                   .replace(">", "&gt;")
+                                   .replace("\n", "<br>"); // Convert newlines to HTML breaks
+
+        StringBuilder capsHtml = new StringBuilder("<ul>");
+        JSONObject caps = serverInfo.optJSONObject("capabilities");
+        if (caps != null) {
+            for (String key : caps.keySet()) {
+                capsHtml.append("<li>").append(key).append("</li>");
+            }
+        }
+        capsHtml.append("</ul>");
+
+        String html = String.format(
+            "<html><body style='font-family: sans-serif; padding: 10px;'>" +
+            "<h2>%s <span style='font-size: small; color: gray;'>(v%s)</span></h2>" +
+            "<b>Protocol Version:</b> %s<br><br>" +
+            "<b>Capabilities:</b>%s" +
+            "<hr>" +
+            "<h3>Instructions</h3>" +
+            "<div style='background-color: #f5f5f5; padding: 10px; border: 1px solid #ddd; font-family: monospace;'>%s</div>" +
+            "</body></html>",
+            name, version, protocol, capsHtml.toString(), instructions
+        );
+
+        JEditorPane editorPane = new JEditorPane("text/html", html);
+        editorPane.setEditable(false);
+        editorPane.setCaretPosition(0);
+        
+        JScrollPane scrollPane = new JScrollPane(editorPane);
+        scrollPane.setPreferredSize(new Dimension(700, 500));
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        
+        JOptionPane.showMessageDialog(this, scrollPane, "Server Information", JOptionPane.INFORMATION_MESSAGE);
     }
 
     // New update methods for separate categories

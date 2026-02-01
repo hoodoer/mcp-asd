@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
 
 public class EnumerationEngine implements TransportListener {
     private final MontoyaApi api;
-    private DashboardTab dashboardTab; // Remove final
+    private DashboardTab dashboardTab;
     private final SessionStore sessionStore;
     private final SecurityTester tester;
     private McpTransport transport;
@@ -21,6 +21,7 @@ public class EnumerationEngine implements TransportListener {
     private ConnectionConfiguration currentConfig;
     
     // Request IDs for tracking enumeration responses
+    private String initializeRequestId;
     private String toolsRequestId;
     private String resourcesRequestId;
     private String promptsRequestId;
@@ -38,49 +39,63 @@ public class EnumerationEngine implements TransportListener {
 
     public void start(ConnectionConfiguration config) {
         this.currentConfig = config;
-        String host = config.getHost();
-        int port = config.getPort();
-        String transportType = config.getTransport();
-        String path = config.getPath();
         
-        this.connectionFailed = false; // Reset flag
+        // Reset state
+        this.connectionFailed = false;
 
         if (dashboardTab != null) {
-            dashboardTab.setTarget(host, port);
-            dashboardTab.setStatus("🟠 Connecting via " + transportType + "...", java.awt.Color.ORANGE.darker());
+            dashboardTab.setTarget(config.getHost(), config.getPort());
+            dashboardTab.setStatus("🟠 Connecting via " + config.getTransport() + "...", java.awt.Color.ORANGE.darker());
         }
-        api.logging().logToOutput("Starting enumeration for " + host + ":" + port + " via " + transportType);
-
+        
         new Thread(() -> {
-            try {
-                latch = new CountDownLatch(3); // tools, resources, prompts
-                
-                if ("WebSocket".equals(transportType)) {
-                    transport = new WebSocketTransport(api);
-                } else {
-                    transport = new SseTransport(api);
+            boolean success = attemptConnection(config, false);
+            if (!success && !config.getTransport().equals("WebSocket")) {
+                api.logging().logToOutput("Enumeration failed or timed out. Retrying with forced HTTP/1.1...");
+                if (dashboardTab != null) {
+                    dashboardTab.setStatus("🟠 Retrying (HTTP/1.1)...", java.awt.Color.ORANGE.darker());
                 }
-                
-                transport.connect(config, this);
-
-                if (!latch.await(15, TimeUnit.SECONDS)) {
-                    if (!connectionFailed) {
-                        api.logging().logToError("Enumeration timed out waiting for responses.");
-                        if (dashboardTab != null) dashboardTab.setStatus("🔴 Connection Timed Out", java.awt.Color.RED);
-                    }
-                    // If connectionFailed is true, onError already updated the status.
-                } else {
-                    if (!connectionFailed) {
-                        api.logging().logToOutput("Enumeration completed successfully.");
-                        if (dashboardTab != null) dashboardTab.setStatus("🟢 Connected & Ready", java.awt.Color.GREEN.darker());
-                    }
-                }
-
-            } catch (Exception e) {
-                api.logging().logToError("Exception during enumeration: " + e.getMessage(), e);
-                if (dashboardTab != null) dashboardTab.setStatus("🔴 Error: " + e.getMessage(), java.awt.Color.RED);
+                attemptConnection(config, true);
             }
         }).start();
+    }
+
+    private boolean attemptConnection(ConnectionConfiguration config, boolean forceHttp1) {
+        try {
+            latch = new CountDownLatch(1); // Wait for Handshake (initialize response)
+            this.connectionFailed = false;
+
+            if ("WebSocket".equals(config.getTransport())) {
+                transport = new WebSocketTransport(api);
+            } else {
+                SseTransport sse = new SseTransport(api);
+                if (forceHttp1) sse.setForceHttp1(true);
+                transport = sse;
+            }
+            
+            api.logging().logToOutput("Starting connection attempt (Force HTTP/1.1: " + forceHttp1 + ")");
+            transport.connect(config, this);
+
+            // Wait for INITIALIZE response, not full enumeration
+            if (!latch.await(30, TimeUnit.SECONDS)) {
+                api.logging().logToError("Connection attempt timed out waiting for handshake.");
+                transport.close();
+                return false;
+            }
+            
+            if (connectionFailed) {
+                transport.close();
+                return false;
+            }
+            
+            api.logging().logToOutput("Handshake successful. Connection secured.");
+            if (dashboardTab != null) dashboardTab.setStatus("🟢 Connected & Ready", java.awt.Color.GREEN.darker());
+            return true;
+
+        } catch (Exception e) {
+            api.logging().logToError("Exception during connection attempt: " + e.getMessage());
+            return false;
+        }
     }
 
     public void sendRequest(String requestBody) {
@@ -94,7 +109,7 @@ public class EnumerationEngine implements TransportListener {
     @Override
     public void onOpen() {
         api.logging().logToOutput("Transport connected.");
-        if (dashboardTab != null) dashboardTab.setStatus("🔵 Enumerating...", java.awt.Color.BLUE.darker());
+        if (dashboardTab != null) dashboardTab.setStatus("🔵 Handshaking...", java.awt.Color.BLUE.darker());
         
         // Trigger initial discovery
         JSONObject initParams = new JSONObject();
@@ -113,22 +128,15 @@ public class EnumerationEngine implements TransportListener {
             }
         }
         
+        initializeRequestId = java.util.UUID.randomUUID().toString();
+        
         JSONObject initRequest = new JSONObject();
         initRequest.put("jsonrpc", "2.0");
         initRequest.put("method", "initialize");
         initRequest.put("params", initParams);
-        initRequest.put("id", java.util.UUID.randomUUID().toString());
+        initRequest.put("id", initializeRequestId);
 
         sendRequest(initRequest.toString());
-        
-        // Generate and store IDs for enumeration
-        toolsRequestId = java.util.UUID.randomUUID().toString();
-        resourcesRequestId = java.util.UUID.randomUUID().toString();
-        promptsRequestId = java.util.UUID.randomUUID().toString();
-
-        sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"tools/list\",\"id\":\"" + toolsRequestId + "\"}");
-        sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"resources/list\",\"id\":\"" + resourcesRequestId + "\"}");
-        sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"prompts/list\",\"id\":\"" + promptsRequestId + "\"}");
     }
 
     @Override
@@ -150,13 +158,51 @@ public class EnumerationEngine implements TransportListener {
             if (json.has("id") && !json.isNull("id")) {
                 String id = json.getString("id");
                 
+                // Handshake Response
+                if (id.equals(initializeRequestId)) {
+                     if (json.has("error")) {
+                         api.logging().logToError("Initialization Failed: " + json.getJSONObject("error").toString());
+                         if (dashboardTab != null) dashboardTab.setStatus("🔴 Init Failed", java.awt.Color.RED);
+                         connectionFailed = true;
+                         if (latch != null) latch.countDown();
+                         return;
+                     }
+                     
+                     api.logging().logToOutput("Handshake successful. Sending 'notifications/initialized' and starting enumeration.");
+                     if (dashboardTab != null) {
+                         dashboardTab.setStatus("🔵 Enumerating...", java.awt.Color.BLUE.darker());
+                         if (json.has("result")) {
+                             dashboardTab.updateServerInfo(json.getJSONObject("result"));
+                         }
+                     }
+                     
+                     // Signal success to the attemptConnection waiter
+                     if (latch != null) latch.countDown();
+
+                     // Send 'notifications/initialized' notification (No ID)
+                     JSONObject initializedNotify = new JSONObject();
+                     initializedNotify.put("jsonrpc", "2.0");
+                     initializedNotify.put("method", "notifications/initialized");
+                     sendRequest(initializedNotify.toString());
+
+                     // NOW trigger enumeration
+                     toolsRequestId = java.util.UUID.randomUUID().toString();
+                     resourcesRequestId = java.util.UUID.randomUUID().toString();
+                     promptsRequestId = java.util.UUID.randomUUID().toString();
+
+                     sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"tools/list\",\"id\":\"" + toolsRequestId + "\"}");
+                     sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"resources/list\",\"id\":\"" + resourcesRequestId + "\"}");
+                     sendRequest("{\"jsonrpc\":\"2.0\",\"method\":\"prompts/list\",\"id\":\"" + promptsRequestId + "\"}");
+                     
+                     return;
+                }
+
                 if (id.equals(toolsRequestId)) {
                     if (json.has("result")) {
                         SwingUtilities.invokeLater(() -> dashboardTab.updateTools(json.getJSONObject("result")));
                     } else if (json.has("error")) {
                          api.logging().logToError("Tools Enumeration Failed: " + json.getJSONObject("error").toString());
                     }
-                    if (latch != null) latch.countDown();
                 } 
                 else if (id.equals(resourcesRequestId)) {
                     if (json.has("result")) {
@@ -164,7 +210,6 @@ public class EnumerationEngine implements TransportListener {
                     } else if (json.has("error")) {
                          api.logging().logToError("Resources Enumeration Failed: " + json.getJSONObject("error").toString());
                     }
-                    if (latch != null) latch.countDown();
                 } 
                 else if (id.equals(promptsRequestId)) {
                     if (json.has("result")) {
@@ -172,7 +217,6 @@ public class EnumerationEngine implements TransportListener {
                     } else if (json.has("error")) {
                          api.logging().logToError("Prompts Enumeration Failed: " + json.getJSONObject("error").toString());
                     }
-                    if (latch != null) latch.countDown();
                 }
             }
         } catch (Exception e) {
@@ -191,12 +235,10 @@ public class EnumerationEngine implements TransportListener {
         String errorMsg = (t != null ? t.getMessage() : "Unknown error");
         api.logging().logToError("Transport failure: " + errorMsg);
         
+        if (latch != null) latch.countDown();
+        
         if (dashboardTab != null) {
             dashboardTab.setStatus("🔴 Failed: " + errorMsg, java.awt.Color.RED);
-        }
-        
-        if (latch != null) {
-            while (latch.getCount() > 0) latch.countDown();
         }
     }
 }

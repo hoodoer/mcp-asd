@@ -1,4 +1,7 @@
 # MCP Attack Surface Detector (MCP-ASD)
+**Version: 0.5.1 (Alpha)**
+
+Note: This project is very alpha, your mileage may very with this as I test it across different MCP servers to make sure it's a generic approach. Any and all feedback, and free testing are welcomed :)
 
 MCP-ASD is a Burp Suite extension (Montoya API) designed to identify, map, and test the attack surface of Model Context Protocol (MCP) servers. 
 
@@ -62,7 +65,11 @@ Upon connection, the extension populates the dashboard with identified primitive
 ### 5. Security Testing
 - **Send to Repeater:** Manually test tool invocations. Repeater tabs are automatically named (e.g., `MCP: get_weather`) for easy identification.
 - **Send to Intruder:** Perform concurrent fuzzing. The extension ensures thread-safe correlation of requests and responses.
-- **Active Scan:** Right-click a tool in the dashboard to perform automated security checks. The extension currently supports Type Confusion and basic Injection probing.
+- **Active Scan:** Right-click a tool in the dashboard to perform automated security checks. The extension currently supports Type Confusion and basic Injection probing. **Note:** Results are currently logged to the Extension's **Output** tab.
+
+### 6. Server Information
+- Click the **Server Info** button in the top header to view detailed metadata about the connected MCP server.
+- This includes the server name, version, protocol version, supported capabilities, and the full System Instructions (prompts).
 
 ## Development Test Server
 A mock MCP server is included for testing the extension's features.

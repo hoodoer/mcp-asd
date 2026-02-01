@@ -140,7 +140,8 @@ public class ConnectionDialog extends JDialog {
                     if (!results.isEmpty()) {
                         if (results.size() == 1) {
                             AutoDetector.DetectionResult res = results.get(0);
-                            transportCombo.setSelectedItem(res.transport);
+                            String transport = res.transport.replace(" (Auth Required)", "");
+                            transportCombo.setSelectedItem(transport);
                             pathField.setText(res.path);
                             JOptionPane.showMessageDialog(this, "Found " + res.transport + " endpoint at " + res.path, "Detection Successful", JOptionPane.INFORMATION_MESSAGE);
                         } else {
@@ -154,7 +155,8 @@ public class ConnectionDialog extends JDialog {
                                 results.get(0)
                             );
                             if (selected != null) {
-                                transportCombo.setSelectedItem(selected.transport);
+                                String transport = selected.transport.replace(" (Auth Required)", "");
+                                transportCombo.setSelectedItem(transport);
                                 pathField.setText(selected.path);
                             }
                         }

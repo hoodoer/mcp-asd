@@ -1,6 +1,7 @@
 package com.mcp_asd.burp.ui;
 
 import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
 import okhttp3.Request;
 import okhttp3.Response;
 
@@ -32,8 +33,9 @@ public class AutoDetector {
         return CompletableFuture.supplyAsync(() -> {
             List<DetectionResult> results = new ArrayList<>();
             OkHttpClient client = new OkHttpClient.Builder()
-                    .readTimeout(2, TimeUnit.SECONDS)
-                    .connectTimeout(2, TimeUnit.SECONDS)
+                    .protocols(Arrays.asList(Protocol.HTTP_1_1))
+                    .readTimeout(5, TimeUnit.SECONDS)
+                    .connectTimeout(5, TimeUnit.SECONDS)
                     .build();
             
             String protocol = useTls ? "https://" : "http://";
