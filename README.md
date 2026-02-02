@@ -55,6 +55,16 @@ The resulting JAR will be located at `build/libs/mcp-asd.jar`.
 
 *Figure 2: Automatic discovery of endpoints*  
 
+<img width="605" height="311" alt="image" src="https://github.com/user-attachments/assets/eb663760-a195-4ce6-955c-3c46fc7c232e" />  
+
+*Figure 3: Authentication required detected*
+
+<img width="631" height="931" alt="image" src="https://github.com/user-attachments/assets/858617b4-a7fa-4e36-b195-ec9abd67f463" />  
+
+*Figure 4: Configure authentication*
+
+
+
 
 ### 2. Global Settings & Detection
 Click the **Settings** button in the top header to configure advanced options:
@@ -66,6 +76,11 @@ Click the **Settings** button in the top header to configure advanced options:
     *   **Passive Checks:** Monitors all passing traffic for MCP indicators (e.g., `MCP-Protocol-Version` header, JSON-RPC bodies). Raises an **Informational Issue** in Burp if detected.
     *   **Active Detection:** Automatically probes new domains for common MCP endpoints (`/mcp`, `/sse`, `/ws`, etc.) when they are first encountered.
     *   **Limit to In-Scope:** Restricts active detection probes to domains that are in your Burp Target Scope (Recommended).
+
+<img width="898" height="813" alt="image" src="https://github.com/user-attachments/assets/bde2a6bc-6ab9-4c61-abf6-d882b8e0a870" />  
+
+*Figure 5: MCP ASD settings*
+
 
 ### 3. Authentication
 The connection dialog includes a dedicated "Authentication" tab supporting three strategies:
@@ -85,13 +100,32 @@ Upon connection, the extension populates the dashboard with identified primitive
 - **Resources:** Data sources or files.
 - **Prompts:** Pre-defined templates.
 
+<img width="1354" height="904" alt="image" src="https://github.com/user-attachments/assets/23ffe577-1a47-4a8a-931f-e19885488da7" />  
+
+*Figure 6: MCP primatives enumerated*  
+
+<img width="79" height="68" alt="image" src="https://github.com/user-attachments/assets/8f2ded37-ca9a-440d-829e-499483277fe8" />  
+
+*Figure 7: Select primative to generate request prototype*
+
+
+
 ### 6. Security Testing
 - **Send to Repeater:** Manually test tool invocations. Repeater tabs are automatically named (e.g., `MCP: get_weather`) for easy identification.
 - **Send to Intruder:** Perform concurrent fuzzing. The extension ensures thread-safe correlation of requests and responses.
 
+<img width="1346" height="632" alt="image" src="https://github.com/user-attachments/assets/1e697b53-db36-4970-8007-8547c31e5e41" />  
+
+*Figure 8: Syncronous bridge allows request/response style Repeater and Intruder usage*
+
+
 ### 7. Server Information
 - Click the **Server Info** button in the top header to view detailed metadata about the connected MCP server.
 - This includes the server name, version, protocol version, supported capabilities, and the full System Instructions (prompts).
+
+<img width="1322" height="816" alt="image" src="https://github.com/user-attachments/assets/ee8ae5d0-329e-4f80-926a-2edc812145bc" />  
+
+*Figure 9: Server information provided by some MCP servers*
 
 ## How it Works (Architecture)
 
