@@ -114,7 +114,7 @@ Upon connection, the extension populates the dashboard with identified primitive
 
 *Figure 8: MCP primatives enumerated*  
 
-<img width="79" height="68" alt="image" src="https://github.com/user-attachments/assets/8f2ded37-ca9a-440d-829e-499483277fe8" />  
+<img width="1259" height="840" alt="image" src="https://github.com/user-attachments/assets/401d56e8-6581-47d1-900a-49f8d054f710" />  
 
 *Figure 9: Select primative to generate request prototype*
 
